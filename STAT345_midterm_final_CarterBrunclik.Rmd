@@ -1,0 +1,452 @@
+---
+title: "Minnesota Timberwolves Data Analysis"
+author: "Carter Brunclik"
+date: "2025-04-02"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(nbastatR)
+library(grid)
+library(jpeg)
+library(magick)
+
+#Increased buffer size to account for the large amount of data points we process when looking through the nbastat data.
+Sys.setenv("VROOM_CONNECTION_SIZE" = 5000000)
+
+```
+
+
+
+```{r, include = FALSE}
+
+#Here we instate each season seperately. This is because doing multiple season in one command creates a table so large that R has trouble computing it properly resulting in a vector of zero length.
+timber_2016 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2016)
+
+timber_2017 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2017)
+
+timber_2018 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2018)
+
+timber_2019 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2019)
+
+timber_2020 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2020)
+
+timber_2021 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2021)
+
+timber_2022 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2022)
+
+timber_2023 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2023)
+
+#This df should have all the seasons binded together and be properly recognized by R.
+timber_df <- bind_rows(timber_2016, timber_2017, timber_2018, timber_2019, timber_2020, timber_2021, timber_2022, timber_2023)
+
+```
+
+
+
+```{r, include = FALSE}
+
+shot_chart <- timber_df %>%
+  mutate(
+    shot_type_group = ifelse(typeShot == "3PT Field Goal", "3PT", "2PT"),
+    shot_label = case_when(
+      !isShotMade ~ "Missed Shot",
+      shot_type_group == "3PT" ~ "3PT Made",
+      TRUE ~ "2PT Made"
+    )
+  )
+
+```
+
+
+
+```{r, include = FALSE}
+
+#Read in the Timberwolves court
+court_img <- image_read("timberwolves_court2_cropped.jpg")
+
+# Rotate 90° counter-clockwise
+court_img_rotated <- image_rotate(court_img, 90)
+
+court_grob <- rasterGrob(
+  as.raster(court_img_rotated),
+  width = unit(1, "npc"),
+  height = unit(1, "npc")
+)
+
+
+```
+
+### A High Level View.
+
+
+- In the 2016-2017 season the Minnesota Timberwolves heavily favored 2PT shots over 3PT shots. 
+
+- Take notice of the 2015-2019 seasons shot count graphics and their abundance of green (2PT shots made)
+
+- We see the trend of a more equal shooting behavior solidify by the 2019-2020 season.
+
+- 2022-2023 season where we see that the Timberwolves now have a much more balanced count of 2PT and 3PT shots.
+
+- The most even seasons in terms of percentage of shot types between 3PT and 2PT shots are 2019-2020 and 2021-2022.
+
+- The bar charts below the shooting graphics make this trend even easier to see at a glance. 
+
+- A lot of 3PT shots are made from the middle or near the middle of the 3PT line.
+
+- 2019-2020 seems to have a larger proportion of 2PT shot scored from near the rim than other seasons.
+
+
+In the 2016-2017 season we can see that there is much more green visually on the shot charts than others and the bar chart indicates that 80% of points in that season were 2PTers. 
+
+From the 2016 to 2019 seasons we can see that the team has a preference for 2PT shots as for this time a majority of points season to season are from 2PT instances.
+
+2019-2020 marks the beginning of the trend of a more equal 2PT to 3PT ratio. There note that once the ratio hits about 50:50 the amount of 3PTs does not increase. This makes sense, while 3PT shots become more of the norm they will never compete with how easy 2PT shots are to score.
+
+The 2021-2022 season is where we really see something close to true equilibrium in scoring ratio. This can be seen both by the shot chart and the accompanying bar charts.
+
+
+```{r, echo = FALSE, fig.height = 10, fig.width = 10}
+
+ggplot(shot_chart, aes(x = locationX, y = locationY)) +
+  annotation_custom(
+    court_grob,
+    xmin = -255, xmax = 255,
+    ymin = -48, ymax = 876
+  ) +
+  geom_point(
+    aes(color = shot_label, shape = shot_label),
+    alpha = 0.5, size = 2
+  ) +
+  scale_color_manual(
+    values = c(
+      "3PT Made" = "blue",
+      "2PT Made" = "green",
+      "Missed Shot" = "red"
+    )
+  ) +
+  scale_shape_manual(
+    values = c(
+      "3PT Made" = 16,       
+      "2PT Made" = 16,       
+      "Missed Shot" = 4
+    )
+  ) +
+  coord_fixed(ratio = 1, xlim = c(-250, 250), ylim = c(-50, 450)) +
+  labs(
+    title = "Minnesota Timberwolves Shot Chart (2016-2022 Seasons)",
+    x = NULL, y = NULL,
+    color = "Shot Outcome",
+    shape = "Shot Outcome"
+  ) +
+  theme_minimal() +
+  facet_wrap(~ slugSeason)
+
+```
+
+
+```{r, include = FALSE}
+#Setup data to easily show shot behavior change.
+timber_summary <- timber_df %>%
+  mutate(
+    shot_type = ifelse(typeShot == "3PT Field Goal", "3PT", "2PT")
+  ) %>%
+  group_by(slugSeason, shot_type) %>%
+  summarize(
+    shot_attempts = n(),
+    .groups = "drop"
+  ) %>%
+  group_by(slugSeason) %>%
+  mutate(
+    total_shots = sum(shot_attempts),
+    pct_of_shots = shot_attempts / total_shots
+  )
+
+```
+
+
+
+```{r, echo = FALSE}
+
+ggplot(timber_summary, aes(x = shot_type, y = pct_of_shots, fill = shot_type)) +
+  geom_col(width = 0.6) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = c("2PT" = "green", "3PT" = "blue")) +
+  labs(
+    title = "2PT vs 3PT Shot Share by Season",
+    subtitle = "Minnesota Timberwolves (2016–2022)",
+    x = "Shot Type",
+    y = "Percent of Shots",
+    fill = "Shot Type"
+  ) +
+  facet_wrap(~ slugSeason) +
+  theme_minimal()
+
+
+
+```
+
+
+\newpage
+
+
+### The Backend
+
+
+
+```{r}
+
+#Here we instate each season seperately. This is because doing multiple seasons in one command creates a table so large that R has trouble computing it properly resulting in a vector of zero length.
+
+timber_2016 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2016)
+
+timber_2017 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2017)
+
+timber_2018 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2018)
+
+timber_2019 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2019)
+
+timber_2020 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2020)
+
+timber_2021 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2021)
+
+timber_2022 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2022)
+
+timber_2023 <- teams_shots(teams = "Minnesota Timberwolves", seasons = 2023)
+
+#This df should have all the seasons binded together and be properly recognized by R. We can troubleshoot by looking at `head(timber_df)` if need be.
+timber_df <- bind_rows(timber_2016, timber_2017, timber_2018, timber_2019, timber_2020, timber_2021, timber_2022, timber_2023)
+
+```
+
+---
+
+```{r}
+
+#Here we create a version of our df that focuses on identifying if shots were made or not and their type (2PT or 3PT)
+
+#I collect this information here so I don't have to nest everything in the ggplot.
+
+shot_chart <- timber_df %>%
+  mutate(
+    shot_type_group = ifelse(typeShot == "3PT Field Goal", "3PT", "2PT"), #ifesle and case_when use simple true false areguements to categorize each shot pulled from timber_df
+    shot_label = case_when(
+      !isShotMade ~ "Missed Shot",
+      shot_type_group == "3PT" ~ "3PT Made",
+      TRUE ~ "2PT Made"
+    )
+  )
+
+```
+
+---
+
+```{r}
+
+#Read in the timberwolves court (the plot backdrops) into an object we can manipulate.
+court_img <- image_read("timberwolves_court2_cropped.jpg")
+
+# Rotate 90° counter-clockwise to fit our plot's orientation
+court_img_rotated <- image_rotate(court_img, 90)
+
+#Turning the court image into a grid graphical object (grob) so that image size edits can be made in ggplot.
+court_grob <- rasterGrob(
+  as.raster(court_img_rotated),
+  width = unit(1, "npc"),
+  height = unit(1, "npc")
+)
+
+
+```
+
+---
+
+```{r, fig.height = 10, fig.width = 10}
+
+ggplot(shot_chart, aes(x = locationX, y = locationY)) +
+  
+  #Adding the court grob
+  annotation_custom(
+    court_grob,
+    xmin = -255, xmax = 255,
+    ymin = -48, ymax = 876
+  ) +
+  
+  #Placing our points, calling back to the shot_chart R chunk for what do to for shape and color.
+  geom_point(
+    aes(color = shot_label, shape = shot_label),
+    alpha = 0.5, size = 2
+  ) +
+  
+  #Giving our points color to make them stand out and make information easier to digest. (Also creates custom legend)
+  scale_color_manual(
+    values = c(
+      "3PT Made" = "blue",
+      "2PT Made" = "green",
+      "Missed Shot" = "red"
+    )
+  ) +
+  
+  #Tells the ggplot what shape to use for each point. (Also helps with legend by giving it shapes)
+  scale_shape_manual(
+    values = c(
+      "3PT Made" = 16,       
+      "2PT Made" = 16,       
+      "Missed Shot" = 4
+    )
+  ) +
+  
+  #Gives our points a grid to plot on.
+  coord_fixed(ratio = 1, xlim = c(-250, 250), ylim = c(-50, 450)) +
+  labs(
+    title = "Minnesota Timberwolves Shot Chart (2016-2022 Seasons)",
+    x = NULL, y = NULL,
+    color = "Shot Outcome",
+    shape = "Shot Outcome"
+  ) +
+  theme_minimal() +
+
+  #Show multiple seasons on separate plots
+  facet_wrap(~ slugSeason)
+
+```
+
+---
+
+```{r}
+
+#Create a new df (similar to before with shot_chart) with the primary focus of finding the shot percentage of 2PTs and 3PTs
+timber_summary <- timber_df %>%
+  mutate(
+    shot_type = ifelse(typeShot == "3PT Field Goal", "3PT", "2PT")
+  ) %>%
+  group_by(slugSeason, shot_type) %>%
+  summarize(
+    #Finding shot attempts, the group_by before this has both the number of 2PTs and 3PTs counted.
+    shot_attempts = n(),
+    .groups = "drop"
+  ) %>%
+  group_by(slugSeason) %>%
+  mutate(
+    total_shots = sum(shot_attempts),
+    pct_of_shots = shot_attempts / total_shots
+  )
+
+```
+
+---
+
+```{r}
+
+#Simple ggplot col charts displaying percentage of 2PT shots and 3PTs shots faceted by season.
+
+ggplot(timber_summary, aes(x = shot_type, y = pct_of_shots, fill = shot_type)) +
+  geom_col(width = 0.6) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = c("2PT" = "green", "3PT" = "blue")) +
+  labs(
+    title = "2PT vs 3PT Shot Share by Season",
+    subtitle = "Minnesota Timberwolves (2016–2022)",
+    x = "Shot Type",
+    y = "Percent of Shots",
+    fill = "Shot Type"
+  ) +
+  facet_wrap(~ slugSeason) +
+  theme_minimal()
+
+
+
+```
+
+
+\newpage
+
+
+### Missing the Point
+
+
+- In my original plots I included misses but did not comment on them. Here I want to take some time to look at some fun missed shots statistics.
+
+- From the plot I can see that the only top misser that consistently has more makes than misses is Karl-Anthony Towns.
+
+-There is a large disparity of misses and makes for Anthony Edwards.
+
+- Andrew Wiggins holds the spot for the most amount of misses in a season for the Timberwolves (2016-2022) from his time in the 2017 season.
+
+- Gorgui Dieng seemes to have the most even make and miss ratio.
+
+
+
+```{r, echo = FALSE}
+#Count missed shots per player per season
+misses_by_player <- timber_df %>%
+  filter(isShotMade == FALSE) %>%
+  group_by(yearSeason, namePlayer) %>%
+  summarize(
+    missed_shots = n(),
+    .groups = "drop"
+  )
+
+#Get top 6 players with most total missed shots (overall)
+top_players <- misses_by_player %>%
+  group_by(namePlayer) %>%
+  summarize(total_misses = sum(missed_shots)) %>%
+  slice_max(total_misses, n = 6)
+
+#Filter and pull names of top missers
+filtered_misses <- misses_by_player %>%
+  filter(namePlayer %in% top_players$namePlayer)
+
+#Get made shots for same players
+made_by_player <- timber_df %>%
+  filter(isShotMade == TRUE, namePlayer %in% top_players$namePlayer) %>%
+  group_by(yearSeason, namePlayer) %>%
+  summarize(made_shots = n(), .groups = "drop")
+
+#Plot
+ggplot() +
+  
+  # Solid lines for missed shots
+  geom_line(
+    data = filtered_misses,
+    aes(x = yearSeason, y = missed_shots, color = namePlayer),
+    linewidth = 1
+  ) +
+  geom_point(
+    data = filtered_misses,
+    aes(x = yearSeason, y = missed_shots, color = namePlayer),
+    size = 2
+  ) +
+  
+  # Dotted lines for made shots
+  geom_line(
+    data = made_by_player,
+    aes(x = yearSeason, y = made_shots, color = namePlayer),
+    linetype = "dotted",
+    linewidth = 1
+  ) +
+  geom_point(
+    data = made_by_player,
+    aes(x = yearSeason, y = made_shots, color = namePlayer),
+    shape = 1,
+    size = 2
+  ) +
+  labs(
+    title = "Missed vs Made Shots by Top 6 Timberwolves Missers (2016–2022)",
+    subtitle = "Solid lines = Misses | Dotted lines = Makes",
+    x = "Season",
+    y = "Number of Shots",
+    color = "Player"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+
+
+
